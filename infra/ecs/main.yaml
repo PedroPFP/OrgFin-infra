@@ -1,0 +1,29 @@
+Parameters:
+  InstanceType:
+    Type: String
+    Default: "t2.micro"
+  DesiredCapaciy:
+    Type: Number
+    Default: 1
+  MaxSize:
+    Type: Number
+    Default: 1
+  ECSAMI: 
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: ami-0c67065b5ac5afe3a
+  VpcId:
+    Type: AWS::EEC2::VPC::Id
+    Default: vpc-0305bc0dd3c6bf3ae
+  Resources: 
+    EcsCluster:
+      Type: AWS::ECS::Cluster
+      Properties:
+        ClusterSettings:
+          - Name: containerInsights
+            Value: enabled
+    ECSAutoScalingGroup:
+      Type: AWS::AutoScaling::AutoScalingGroup
+      DependsOn:
+        - EcsCluster
+        - EC2Role
+       

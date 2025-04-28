@@ -1,0 +1,24 @@
+
+  Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AccountRecoverySetting:
+        - Name: "verified_email"
+          Priority: 1
+        - Name: "verified_phone_number"
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+        InviteMessageTemplate: 
+          EmailMessage: "Obrigado por se cadastrar no OrgFin!"
+          EmailSubject: "Cadastro OrgFin"
+          SMSMessage: "Obrigado por se cadastrar no OrgFin!"
+        UnusedAccountValidityDays: 1
+      DeletionProection: "ACTIVE"
+      DeviceConfiguration:
+        ChallengeRequiredOnNewDevice: true
+      EnabledMfas: 
+        - "SOFWARE_TOKEN_MFA"
+      MfaConfiguration:
+        "OPTIONAL"
+      UserPoolName: "OrgFin-users"
