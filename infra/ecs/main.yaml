@@ -1,29 +1,72 @@
 Parameters:
-  InstanceType:
-    Type: String
-    Default: "t2.micro"
-  DesiredCapaciy:
-    Type: Number
-    Default: 1
-  MaxSize:
-    Type: Number
-    Default: 1
-  ECSAMI: 
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: ami-0c67065b5ac5afe3a
-  VpcId:
-    Type: AWS::EEC2::VPC::Id
-    Default: vpc-0305bc0dd3c6bf3ae
-  Resources: 
-    EcsCluster:
-      Type: AWS::ECS::Cluster
-      Properties:
-        ClusterSettings:
-          - Name: containerInsights
-            Value: enabled
-    ECSAutoScalingGroup:
-      Type: AWS::AutoScaling::AutoScalingGroup
-      DependsOn:
-        - EcsCluster
-        - EC2Role
-       
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+  # Usado para ligar o capacityProvider em noss cluster
+  CapaciyProviderAssociation:
+    Type: AWS::ECS::ClusterCapacityProviderAssociations
+    Properties:
+      CapacityProviders:
+        - !Ref CapacityProvider
+      Cluster: !Ref Cluster
+      DefaultCapacityProviderStrategy:
+        - Base: 1
+          Weight: 1
+          CapacityProvider: !Ref CapacityProvider
+  # Usado para ligar o ASG ao nosso clusterAssociation
+  CapacityProvider:
+    Type: AWS::ECS::CapacityProvider
+  # Precisamos de um ASG gerar as instancias que irão se registrar no cluster e rodar os containers
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+  # Configuração para cada container adicionado no cluster
+  ContainerInstance:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData: 
+        CpuOptions: 
+          CoreCount: 1
+        EbsOptimized: false
+        IamInstanceProfile: !Ref Profile
+        ImageId: a
+        InstanceType: t2.micro
+        SecurityGroupIds:
+          - !Ref ContainerSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+           #!/bin/bash -xe
+            echo ECS_CLUSTER=${Cluster} >> /etc/ecs/ecs.config
+            yum install -y aws-cfn-bootstrap
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource ContainerInstances --configsets full_install --region ${AWS::Region} &
+      LaunchTemplateName: api-transacoes-container
+  # Imagem que será usada para criar as instancias
+  Image:
+    Type: AWS::ImageBuilder::Image
+    Properties:
+  # Profile usado nas instancias
+  Profile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: api-transacoes-profile
+      Roles:
+        - !Ref Ec2Role
+  # Firewall e regras de rede padrão
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: no-permission
+      VpcId: vpc-0305bc0dd3c6bf3ae
+  # Roles que serão ligadas ao profile
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        - Effect: Allow
+          Action: 
+            - dynamodb:Query
+            - dymamodb:Scan
+            - dynamodb:PutItem
+            - dynamodb:Delete*        
+            - dynamodb:Update*
+            - dynamodb:Get
+          Resource: arn:aws:dynamodb:sa-east-1:977465939936:table/tb_transacoes
