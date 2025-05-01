@@ -1,8 +1,11 @@
-Parameters:
-    TargetContainerRepository:
-      RepositoryName: 977465939936.dkr.ecr.sa-east-1.amazonaws.com/github/pedropfp/orgfin-transacoes-api
-  
 Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
   # Usado para ligar o capacityProvider em noss cluster
   CapaciyProviderAssociation:
     Type: AWS::ECS::ClusterCapacityProviderAssociations
@@ -102,4 +105,5 @@ Resources:
     Type: AWS::ImageBuilder::ContainerRecipe
     Properties:
       TargetRepository: 
-        Ref: TargetContainerRepository
+        TargetContainerRepository:
+          RepositoryName: "977465939936.dkr.ecr.sa-east-1.amazonaws.com/github/pedropfp/orgfin-transacoes-api"
