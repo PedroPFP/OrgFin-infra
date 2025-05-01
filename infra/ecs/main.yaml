@@ -36,7 +36,7 @@ Resources:
       - Cluster
       - Ec2Role
     Properties:
-      AutoScallingGroupName: asg-api-transacoes
+      AutoScalingGroupName: asg-api-transacoes
       AvailabilityZoneDistribution:
         CapacityDistributionStrategy: balanced-best-effort
       DesiredCapacity: 1
@@ -45,7 +45,7 @@ Resources:
         Version: !GetAtt ContainerInstance.LatestVersionNumber
       MaxSize: 1
       MinSize: 0
-      NewInstanceProtectedFromScaleIn: True
+      NewInstancesProtectedFromScaleIn: True
     UpdatePolicy:
       AutoScallingReplacingUpdate: 
         WillReplace: "true"
@@ -92,18 +92,17 @@ Resources:
     Type: AWS::IAM::Role
     Properties: 
       AssumeRolePolicyDocument:
-        - Effect: Allow
-          Action: 
-            - dynamodb:Query
-            - dymamodb:Scan
-            - dynamodb:PutItem
-            - dynamodb:Delete*        
-            - dynamodb:Update*
-            - dynamodb:Get
-          Resource: arn:aws:dynamodb:sa-east-1:977465939936:table/tb_transacoes
+        Effect: Allow
+        Action: 
+          - dynamodb:Query
+          - dymamodb:Scan
+          - dynamodb:PutItem
+          - dynamodb:Delete*        
+          - dynamodb:Update*
+          - dynamodb:Get
+        Resource: arn:aws:dynamodb:sa-east-1:977465939936:table/tb_transacoes
   ContainerRecipe:
     Type: AWS::ImageBuilder::ContainerRecipe
     Properties:
       TargetRepository: 
-        TargetContainerRepository:
-          RepositoryName: "977465939936.dkr.ecr.sa-east-1.amazonaws.com/github/pedropfp/orgfin-transacoes-api"
+        RepositoryName: "977465939936.dkr.ecr.sa-east-1.amazonaws.com/github/pedropfp/orgfin-transacoes-api"
