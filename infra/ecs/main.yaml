@@ -16,18 +16,13 @@ Resources:
       DefaultCapacityProviderStrategy:
         - Base: 1
           Weight: 1
-          CapacityProvider: 
-            AutoScalingGroupArn: !Ref CapacityProvider
-            ManagedScaling:
-              MaximumScalingStepSize: 1
-              Status: ENABLED
-              TargeCapacity: 1
-            ManagedTerminationProtection: ENABLED
+          CapacityProvider: !Ref CapacityProvider
   # Usado para ligar o ASG ao nosso clusterAssociation
   CapacityProvider:
     Type: AWS::ECS::CapacityProvider
     Properties: 
-      AutoScalingGroupProvider: !Ref ASG
+      AutoScalingGroupProvider: 
+        AutoScalingGroupArn: !Ref ASG
       Name: api-transacoes-capacity
   # Precisamos de um ASG gerar as instancias que irão se registrar no cluster e rodar os containers
   ASG:
@@ -37,6 +32,9 @@ Resources:
       - Ec2Role
     Properties:
       AutoScalingGroupName: asg-api-transacoes
+      VPCZoneIdentifier:
+        - subnet-04950f43443f82417
+        - subnet-0893d9206d486445a
       AvailabilityZoneDistribution:
         CapacityDistributionStrategy: balanced-best-effort
       DesiredCapacity: 1
@@ -54,11 +52,10 @@ Resources:
     Type: AWS::EC2::LaunchTemplate
     Properties:
       LaunchTemplateData: 
-        CpuOptions: 
-          CoreCount: 1
         EbsOptimized: false
-        IamInstanceProfile: !Ref Profile
-        ImageId: a
+        IamInstanceProfile:           
+          Name: !Ref Profile
+        ImageId: ami-0eab6be2916bd677c
         InstanceType: t2.micro
         SecurityGroupIds:
           - !Ref ContainerSecurityGroup
@@ -69,16 +66,10 @@ Resources:
             yum install -y aws-cfn-bootstrap
             /opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource ContainerInstances --configsets full_install --region ${AWS::Region} &
       LaunchTemplateName: api-transacoes-container
-  # Imagem que será usada para criar as instancias
-  Image:
-    Type: AWS::ImageBuilder::Image
-    Properties:
-      ContainerRecipeArn: !Ref ContainerRecipe
   # Profile usado nas instancias
   Profile:
     Type: AWS::IAM::InstanceProfile
     Properties:
-      InstanceProfileName: api-transacoes-profile
       Roles:
         - !Ref Ec2Role
   # Firewall e regras de rede padrão
@@ -87,22 +78,38 @@ Resources:
     Properties:
       GroupName: no-permission
       VpcId: vpc-0305bc0dd3c6bf3ae
+      GroupDescription: "Descricao padrao"
   # Roles que serão ligadas ao profile
   Ec2Role:
     Type: AWS::IAM::Role
     Properties: 
       AssumeRolePolicyDocument:
-        Effect: Allow
-        Action: 
-          - dynamodb:Query
-          - dymamodb:Scan
-          - dynamodb:PutItem
-          - dynamodb:Delete*        
-          - dynamodb:Update*
-          - dynamodb:Get
-        Resource: arn:aws:dynamodb:sa-east-1:977465939936:table/tb_transacoes
-  ContainerRecipe:
-    Type: AWS::ImageBuilder::ContainerRecipe
+        Statement: 
+          - Effect: Allow
+            Action: 
+              - sts:AssumeRole
+            Principal:
+              Service: 
+                - ecs-tasks.amazonaws.com
+  Service:
+    Type: AWS::ECS::Service
     Properties:
-      TargetRepository: 
-        RepositoryName: "977465939936.dkr.ecr.sa-east-1.amazonaws.com/github/pedropfp/orgfin-transacoes-api"
+      AvailabilityZoneRebalancing: ENABLED
+      DesiredCount: 1
+      Cluster: !Ref Cluster
+      LaunchType: EC2
+      TaskDefinition: !Ref Task
+  Task:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: tasks-familia-api-transacao
+      RequiresCompatibilities: 
+        - EC2
+      ContainerDefinitions:
+        - Name: api-transacoes-container
+          Image: 977465939936.dkr.ecr.sa-east-1.amazonaws.com/github/pedropfp/orgfin-transacoes-api
+          Memory: 512
+          Cpu: 1
+          Essential: True
+          PortMappings:
+            - ContainerPort: 80
