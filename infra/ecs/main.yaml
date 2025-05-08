@@ -55,7 +55,7 @@ Resources:
         EbsOptimized: false
         IamInstanceProfile:           
           Name: !Ref Profile
-        ImageId: ami-0eab6be2916bd677c
+        ImageId: ami-0e63cf5f87db74564
         InstanceType: t2.micro
         SecurityGroupIds:
           - !Ref ContainerSecurityGroup
@@ -64,7 +64,7 @@ Resources:
            #!/bin/bash -xe
             echo ECS_CLUSTER=${Cluster} >> /etc/ecs/ecs.config
             yum install -y aws-cfn-bootstrap
-            /opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource ContainerInstances --configsets full_install --region ${AWS::Region} &
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource ContainerInstance --configsets full_install --region ${AWS::Region} &
       LaunchTemplateName: api-transacoes-container
   # Profile usado nas instancias
   Profile:
@@ -90,7 +90,10 @@ Resources:
               - sts:AssumeRole
             Principal:
               Service: 
-                - ecs-tasks.amazonaws.com
+                - ec2.amazonaws.com        
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds
   Service:
     Type: AWS::ECS::Service
     Properties:
@@ -105,11 +108,25 @@ Resources:
       Family: tasks-familia-api-transacao
       RequiresCompatibilities: 
         - EC2
+      ExecutionRoleArn: !Ref TaskExecutionRole
       ContainerDefinitions:
         - Name: api-transacoes-container
           Image: 977465939936.dkr.ecr.sa-east-1.amazonaws.com/github/pedropfp/orgfin-transacoes-api
-          Memory: 512
-          Cpu: 1
+          Memory: 450
+          Cpu: 1024
           Essential: True
           PortMappings:
-            - ContainerPort: 80
+            - ContainerPort: 8080
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
