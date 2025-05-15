@@ -81,18 +81,18 @@ Resources:
       GroupDescription: "Descricao padrao"
       SecurityGroupEgress:
         - CidrIp: "0.0.0.0/0"
-          FromPort: 22
-          IpProtocol: ssh
-        - CidrIp: "0.0.0.0/0"
           FromPort: 80
-          IpProtocol: http            
+          ToPort: 80
+          IpProtocol: tcp
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0            
       SecurityGroupIngress:
         - CidrIp: "0.0.0.0/0"
-          FromPort: 22
-          IpProtocol: ssh
-        - CidrIp: "0.0.0.0/0"
           FromPort: 80
-          IpProtocol: http   
+          ToPort: 80
+          IpProtocol: tcp 
   # Roles que serão ligadas ao profile
   Ec2Role:
     Type: AWS::IAM::Role
@@ -122,6 +122,7 @@ Resources:
           TargetGroupArn: !Ref TargetGroup
   Task:
     Type: AWS::ECS::TaskDefinition
+    DependsOn: TaskExecutionRole
     Properties:
       Family: tasks-familia-api-transacao
       RequiresCompatibilities: 
@@ -151,16 +152,18 @@ Resources:
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: LoadBalancer
     Properties:    
       VpcId: vpc-0305bc0dd3c6bf3ae
       Protocol: HTTP
       Port: 80
-      TargetType: Instance
+      TargetType: instance
       HealthCheckPath: /actuator/health
       Matcher:
         HttpCode: 200
   LoadBalancer: 
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: EcsLoadBalancerSecurityGroup
     Properties:
       Name: lb-transacoes-api
       Scheme: internet-facing
@@ -172,6 +175,8 @@ Resources:
   EcsLoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
+      GroupDescription: sg do LoadBalancer
+      VpcId: vpc-0305bc0dd3c6bf3ae
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -179,6 +184,9 @@ Resources:
           CidrIp: 0.0.0.0/0
   Listener:
     Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: 
+      - LoadBalancer
+      - TargetGroup
     Properties:
       LoadBalancerArn: !Ref LoadBalancer
       Port: 80
