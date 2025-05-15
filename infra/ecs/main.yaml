@@ -76,9 +76,23 @@ Resources:
   ContainerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: no-permission
+      GroupName: container-sg
       VpcId: vpc-0305bc0dd3c6bf3ae
       GroupDescription: "Descricao padrao"
+      SecurityGroupEgress:
+        - CidrIp: "0.0.0.0/0"
+          FromPort: 22
+          IpProtocol: ssh
+        - CidrIp: "0.0.0.0/0"
+          FromPort: 80
+          IpProtocol: http            
+      SecurityGroupIngress:
+        - CidrIp: "0.0.0.0/0"
+          FromPort: 22
+          IpProtocol: ssh
+        - CidrIp: "0.0.0.0/0"
+          FromPort: 80
+          IpProtocol: http   
   # Roles que serão ligadas ao profile
   Ec2Role:
     Type: AWS::IAM::Role
@@ -102,6 +116,10 @@ Resources:
       Cluster: !Ref Cluster
       LaunchType: EC2
       TaskDefinition: !Ref Task
+      LoadBalancers:
+        - ContainerName: api-transacoes-container
+          ContainerPort: 8080
+          TargetGroupArn: !Ref TargetGroup
   Task:
     Type: AWS::ECS::TaskDefinition
     Properties:
@@ -130,3 +148,41 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:    
+      VpcId: vpc-0305bc0dd3c6bf3ae
+      Protocol: HTTP
+      Port: 80
+      TargetType: Instance
+      HealthCheckPath: /actuator/health
+      Matcher:
+        HttpCode: 200
+  LoadBalancer: 
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: lb-transacoes-api
+      Scheme: internet-facing
+      Subnets:
+        - subnet-04950f43443f82417
+        - subnet-0893d9206d486445a
+      SecurityGroups:
+        - !Ref EcsLoadBalancerSecurityGroup
+  EcsLoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
