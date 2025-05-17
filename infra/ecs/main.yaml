@@ -52,6 +52,7 @@ Resources:
     Type: AWS::EC2::LaunchTemplate
     Properties:
       LaunchTemplateData: 
+        KeyName: ec2-container
         EbsOptimized: false
         IamInstanceProfile:           
           Name: !Ref Profile
@@ -81,18 +82,47 @@ Resources:
       GroupDescription: "Descricao padrao"
       SecurityGroupEgress:
         - CidrIp: "0.0.0.0/0"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+        - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          IpProtocol: tcp
-        - IpProtocol: -1
-          FromPort: 0
-          ToPort: 65535
-          CidrIp: 0.0.0.0/0            
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0          
       SecurityGroupIngress:
         - CidrIp: "0.0.0.0/0"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+        - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          IpProtocol: tcp 
+          CidrIp: 0.0.0.0/0    
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0                
+  #Definimos um egress/ingress separadamente quando queremos referenciar um SG
+  ContainerSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      DestinationSecurityGroupId: !GetAtt EcsLoadBalancerSecurityGroup.GroupId
+      FromPort: 32768
+      ToPort: 32768
+      IpProtocol: tcp
+      GroupId: !GetAtt ContainerSecurityGroup.GroupId
+  ContainerSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      SourceSecurityGroupId: !GetAtt EcsLoadBalancerSecurityGroup.GroupId
+      FromPort: 32768
+      ToPort: 32768
+      IpProtocol: tcp
+      GroupId: !GetAtt ContainerSecurityGroup.GroupId
   # Roles que serão ligadas ao profile
   Ec2Role:
     Type: AWS::IAM::Role
@@ -108,6 +138,8 @@ Resources:
       ManagedPolicyArns: 
         - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
         - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds
+        - arn:aws:iam::aws:policy/AmazonCognitoReadOnly
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
   Service:
     Type: AWS::ECS::Service
     Properties:
@@ -182,6 +214,27 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  EcsLoadBalancerSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      DestinationSecurityGroupId: !GetAtt ContainerSecurityGroup.GroupId
+      FromPort: 32768
+      ToPort: 32768
+      IpProtocol: tcp
+      GroupId: !GetAtt EcsLoadBalancerSecurityGroup.GroupId
+  EcsLoadBalancerSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      SourceSecurityGroupId: !GetAtt ContainerSecurityGroup.GroupId
+      FromPort: 32768
+      ToPort: 32768
+      IpProtocol: tcp
+      GroupId: !GetAtt EcsLoadBalancerSecurityGroup.GroupId
   Listener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     DependsOn: 
