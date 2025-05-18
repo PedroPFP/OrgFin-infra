@@ -1,0 +1,45 @@
+Resources:
+  ApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Description: Api gateway para a api de transações
+      Name: api-transacoes-gateway
+      ProtocolType: HTTP
+  Stage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ApiGateway
+      AutoDeploy: True
+      StageName: Prod
+      Description: Estágio da api, serve para expor a clientes a api e criar deploys
+  Auth:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref ApiGateway
+      AuthorizerType: JWT
+      IdentitySource: 
+        - $request.header.Authorization
+      Name: user-pool-auth
+      JwtConfiguration:
+        Audience:
+          - sa-east-1_v4yhpN41u
+          - 6cinfkjmqeh9asvo4rqhunt3rj
+        Issuer: https://cognito-idp.sa-east-1.amazonaws.com/sa-east-1_v4yhpN41u
+  Route:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      AuthorizationType: JWT
+      AuthorizerId: !Ref Auth
+      RouteKey: "ANY /{proxy+}"
+      Target: !Sub "integrations/${LbIntegration}"
+  LbIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: ANY
+      IntegrationUri: "http://lb-transacoes-api-226127291.sa-east-1.elb.amazonaws.com/{proxy}"
+      PayloadFormatVersion: "1.0"
+      RequestParameters:
+        append:header.x-api-secret: "{{resolve:secretsmanager:orgfin/transacoes/api-gtw/auth-id:SecretString:auth_id}}"

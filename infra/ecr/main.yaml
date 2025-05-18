@@ -1,0 +1,7 @@
+Resources:
+  ECR:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: false
+      ImageTagMutability: MUTABLE
+      RepositoryName: github/pedropfp/orgfin-transacoes-api
