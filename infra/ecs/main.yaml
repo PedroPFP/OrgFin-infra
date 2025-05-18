@@ -235,6 +235,7 @@ Resources:
       ToPort: 32768
       IpProtocol: tcp
       GroupId: !GetAtt EcsLoadBalancerSecurityGroup.GroupId
+  #O listener serve para escutar as requisições com destino ao nosso LB, e redirecionar por porta a um TG
   Listener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     DependsOn: 

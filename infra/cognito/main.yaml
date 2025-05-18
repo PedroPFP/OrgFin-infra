@@ -1,5 +1,15 @@
 
   Resources:
+    InsomniaClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        UserPoolId: !Ref UserPool
+        ClientName: Insomnia
+    Domain:
+      Type: AWS::Cognito::UserPoolDomain
+      Properties:
+        Domain: api-transacoes
+        UserPoolId: !Ref UserPool
     UserPool:
       Type: AWS::Cognito::UserPool
       Properties:
