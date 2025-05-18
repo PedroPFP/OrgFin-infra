@@ -1,29 +1,250 @@
-Parameters:
-  InstanceType:
-    Type: String
-    Default: "t2.micro"
-  DesiredCapaciy:
-    Type: Number
-    Default: 1
-  MaxSize:
-    Type: Number
-    Default: 1
-  ECSAMI: 
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: ami-0c67065b5ac5afe3a
-  VpcId:
-    Type: AWS::EEC2::VPC::Id
-    Default: vpc-0305bc0dd3c6bf3ae
-  Resources: 
-    EcsCluster:
-      Type: AWS::ECS::Cluster
-      Properties:
-        ClusterSettings:
-          - Name: containerInsights
-            Value: enabled
-    ECSAutoScalingGroup:
-      Type: AWS::AutoScaling::AutoScalingGroup
-      DependsOn:
-        - EcsCluster
-        - EC2Role
-       
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  # Usado para ligar o capacityProvider em noss cluster
+  CapaciyProviderAssociation:
+    Type: AWS::ECS::ClusterCapacityProviderAssociations
+    Properties:
+      CapacityProviders:
+        - !Ref CapacityProvider
+      Cluster: !Ref Cluster
+      DefaultCapacityProviderStrategy:
+        - Base: 1
+          Weight: 1
+          CapacityProvider: !Ref CapacityProvider
+  # Usado para ligar o ASG ao nosso clusterAssociation
+  CapacityProvider:
+    Type: AWS::ECS::CapacityProvider
+    Properties: 
+      AutoScalingGroupProvider: 
+        AutoScalingGroupArn: !Ref ASG
+      Name: api-transacoes-capacity
+  # Precisamos de um ASG gerar as instancias que irão se registrar no cluster e rodar os containers
+  ASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn:
+      - Cluster
+      - Ec2Role
+    Properties:
+      AutoScalingGroupName: asg-api-transacoes
+      VPCZoneIdentifier:
+        - subnet-04950f43443f82417
+        - subnet-0893d9206d486445a
+      AvailabilityZoneDistribution:
+        CapacityDistributionStrategy: balanced-best-effort
+      DesiredCapacity: 1
+      LaunchTemplate: 
+        LaunchTemplateId: !Ref ContainerInstance
+        Version: !GetAtt ContainerInstance.LatestVersionNumber
+      MaxSize: 1
+      MinSize: 0
+      NewInstancesProtectedFromScaleIn: True
+    UpdatePolicy:
+      AutoScallingReplacingUpdate: 
+        WillReplace: "true"
+  # Configuração para cada container adicionado no cluster
+  ContainerInstance:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData: 
+        KeyName: ec2-container
+        EbsOptimized: false
+        IamInstanceProfile:           
+          Name: !Ref Profile
+        ImageId: ami-0e63cf5f87db74564
+        InstanceType: t2.micro
+        SecurityGroupIds:
+          - !Ref ContainerSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+           #!/bin/bash -xe
+            echo ECS_CLUSTER=${Cluster} >> /etc/ecs/ecs.config
+            yum install -y aws-cfn-bootstrap
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackId} --resource ContainerInstance --configsets full_install --region ${AWS::Region} &
+      LaunchTemplateName: api-transacoes-container
+  # Profile usado nas instancias
+  Profile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref Ec2Role
+  # Firewall e regras de rede padrão
+  ContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: container-sg
+      VpcId: vpc-0305bc0dd3c6bf3ae
+      GroupDescription: "Descricao padrao"
+      SecurityGroupEgress:
+        - CidrIp: "0.0.0.0/0"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0          
+      SecurityGroupIngress:
+        - CidrIp: "0.0.0.0/0"
+          FromPort: 22
+          ToPort: 22
+          IpProtocol: tcp
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0    
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0                
+  #Definimos um egress/ingress separadamente quando queremos referenciar um SG
+  ContainerSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      DestinationSecurityGroupId: !GetAtt EcsLoadBalancerSecurityGroup.GroupId
+      FromPort: 32768
+      ToPort: 32768
+      IpProtocol: tcp
+      GroupId: !GetAtt ContainerSecurityGroup.GroupId
+  ContainerSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      SourceSecurityGroupId: !GetAtt EcsLoadBalancerSecurityGroup.GroupId
+      FromPort: 32768
+      ToPort: 32768
+      IpProtocol: tcp
+      GroupId: !GetAtt ContainerSecurityGroup.GroupId
+  # Roles que serão ligadas ao profile
+  Ec2Role:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Statement: 
+          - Effect: Allow
+            Action: 
+              - sts:AssumeRole
+            Principal:
+              Service: 
+                - ec2.amazonaws.com        
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilderECRContainerBuilds
+        - arn:aws:iam::aws:policy/AmazonCognitoReadOnly
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      AvailabilityZoneRebalancing: ENABLED
+      DesiredCount: 1
+      Cluster: !Ref Cluster
+      LaunchType: EC2
+      TaskDefinition: !Ref Task
+      LoadBalancers:
+        - ContainerName: api-transacoes-container
+          ContainerPort: 8080
+          TargetGroupArn: !Ref TargetGroup
+  Task:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn: TaskExecutionRole
+    Properties:
+      Family: tasks-familia-api-transacao
+      RequiresCompatibilities: 
+        - EC2
+      ExecutionRoleArn: !Ref TaskExecutionRole
+      ContainerDefinitions:
+        - Name: api-transacoes-container
+          Image: 977465939936.dkr.ecr.sa-east-1.amazonaws.com/github/pedropfp/orgfin-transacoes-api
+          Memory: 450
+          Cpu: 1024
+          Essential: True
+          PortMappings:
+            - ContainerPort: 8080
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: LoadBalancer
+    Properties:    
+      VpcId: vpc-0305bc0dd3c6bf3ae
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      HealthCheckPath: /actuator/health
+      Matcher:
+        HttpCode: 200
+  LoadBalancer: 
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn: EcsLoadBalancerSecurityGroup
+    Properties:
+      Name: lb-transacoes-api
+      Scheme: internet-facing
+      Subnets:
+        - subnet-04950f43443f82417
+        - subnet-0893d9206d486445a
+      SecurityGroups:
+        - !Ref EcsLoadBalancerSecurityGroup
+  EcsLoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: sg do LoadBalancer
+      VpcId: vpc-0305bc0dd3c6bf3ae
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+  EcsLoadBalancerSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      DestinationSecurityGroupId: !GetAtt ContainerSecurityGroup.GroupId
+      FromPort: 32768
+      ToPort: 32768
+      IpProtocol: tcp
+      GroupId: !GetAtt EcsLoadBalancerSecurityGroup.GroupId
+  EcsLoadBalancerSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      SourceSecurityGroupId: !GetAtt ContainerSecurityGroup.GroupId
+      FromPort: 32768
+      ToPort: 32768
+      IpProtocol: tcp
+      GroupId: !GetAtt EcsLoadBalancerSecurityGroup.GroupId
+  #O listener serve para escutar as requisições com destino ao nosso LB, e redirecionar por porta a um TG
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn: 
+      - LoadBalancer
+      - TargetGroup
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
